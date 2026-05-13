@@ -1,8 +1,9 @@
 ---
-
-## name: ui
-description: Build a one-off HTML page as a side-channel UI in the browser when the user has a lot of small, structured decisions to grind through (triage lists, per-item assessments, multi-row picks, forms), or when they want to chat with you through a floating popover instead of the terminal. A tiny local HTTP server serves the page; the browser POSTs user input + chat messages to JSON files you watch with Monitor, and polls response JSON files you write.
+name: ui
+description: >-
+  Build a one-off HTML page as a side-channel UI in the browser when the user has a lot of small, structured decisions to grind through (triage lists, per-item assessments, multi-row picks, forms), or when they want to chat with you through a floating popover instead of the terminal. A tiny local HTTP server serves the page; the browser POSTs user input + chat messages to JSON files you watch with Monitor, and polls response JSON files you write.
 user-invocable: true
+---
 
 # UI — browser-side collaboration surface
 
