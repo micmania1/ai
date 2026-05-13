@@ -1,0 +1,356 @@
+<!--
+  Chat popover template for the /ui skill.
+
+  Drop these three blocks into the generated index.html:
+    1. The <style> block (or merge with your page CSS)
+    2. The two DOM nodes (fab button + aside panel)
+    3. The <script> block
+
+  Same-origin assumption: this only works when the page is served by the
+  ui HTTP server, because it POSTs to /write and GETs /chat-out.json.
+
+  Files this code touches (relative to the server's serve dir):
+    - chat-in.json   browser writes, full array of user messages
+    - chat-out.json  browser polls, full array of assistant messages
+
+  Both arrays hold entries shaped: { id: number, text: string, ts: number }
+  ts is Date.now() at write time; the page merges both arrays by ts to
+  render the conversation in order.
+-->
+
+<style>
+  .ui-chat-fab {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #111827;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+    font-size: 24px;
+    line-height: 1;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ui-chat-fab[data-unread="true"]::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 2px solid #111827;
+  }
+  .ui-chat-panel {
+    position: fixed;
+    bottom: 88px;
+    right: 20px;
+    width: 360px;
+    max-width: calc(100vw - 40px);
+    height: 520px;
+    max-height: calc(100vh - 120px);
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 10000;
+    font: 14px/1.4 system-ui, -apple-system, sans-serif;
+    color: #111827;
+  }
+  .ui-chat-panel[data-open="true"] { display: flex; }
+  .ui-chat-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .ui-chat-status {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 400;
+  }
+  .ui-chat-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ui-chat-msg {
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .ui-chat-msg[data-role="user"] {
+    align-self: flex-end;
+    background: #2563eb;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .ui-chat-msg[data-role="assistant"] {
+    align-self: flex-start;
+    background: #f3f4f6;
+    color: #111827;
+    border-bottom-left-radius: 4px;
+  }
+  .ui-chat-thinking {
+    align-self: flex-start;
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border-bottom-left-radius: 4px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 13px;
+    font-style: italic;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ui-chat-dots { display: inline-flex; gap: 3px; }
+  .ui-chat-dots span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: ui-chat-dot 1.2s infinite;
+  }
+  .ui-chat-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .ui-chat-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes ui-chat-dot {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(1); }
+    40%          { opacity: 1;   transform: scale(1.3); }
+  }
+  .ui-chat-empty {
+    color: #9ca3af;
+    text-align: center;
+    padding: 24px 16px;
+  }
+  .ui-chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .ui-chat-input {
+    flex: 1;
+    resize: none;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font: inherit;
+  }
+  .ui-chat-input:focus {
+    outline: 2px solid #2563eb;
+    outline-offset: -2px;
+    border-color: transparent;
+  }
+  .ui-chat-send {
+    padding: 0 16px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .ui-chat-send:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+</style>
+
+<button class="ui-chat-fab" id="uiChatFab" aria-label="Open chat" data-unread="false" data-preserve>💬</button>
+<aside class="ui-chat-panel" id="uiChatPanel" data-open="false" aria-label="Chat with Claude" data-preserve>
+  <header class="ui-chat-header">
+    <span>Chat with Claude</span>
+    <span class="ui-chat-status" id="uiChatStatus"></span>
+  </header>
+  <div class="ui-chat-log" id="uiChatLog">
+    <div class="ui-chat-empty">No messages yet. Say hi 👋</div>
+  </div>
+  <form class="ui-chat-input-row" id="uiChatForm">
+    <textarea
+      class="ui-chat-input"
+      id="uiChatInput"
+      rows="2"
+      placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
+    ></textarea>
+    <button class="ui-chat-send" type="submit">Send</button>
+  </form>
+</aside>
+
+<script>
+(() => {
+  // Clean up any prior IIFE execution from a previous soft-swap.
+  if (window.__uiChatPollInterval) clearInterval(window.__uiChatPollInterval);
+  // Strip stale listeners on preserved nodes by cloning. cloneNode keeps
+  // attributes (data-open, data-unread, etc.) but not addEventListener
+  // bindings. Form input values are properties, so snapshot + restore them.
+  for (const id of ['uiChatFab', 'uiChatPanel']) {
+    const el = document.getElementById(id);
+    if (!el || !el.parentNode) continue;
+    const fields = Array.from(el.querySelectorAll('input, textarea, select'));
+    const values = fields.map((f) => [f.id, f.value]);
+    el.parentNode.replaceChild(el.cloneNode(true), el);
+    for (const [iid, val] of values) {
+      if (!iid) continue;
+      const fresh = document.getElementById(iid);
+      if (fresh) fresh.value = val;
+    }
+  }
+
+  const fab = document.getElementById('uiChatFab');
+  const panel = document.getElementById('uiChatPanel');
+  const log = document.getElementById('uiChatLog');
+  const form = document.getElementById('uiChatForm');
+  const input = document.getElementById('uiChatInput');
+  const status = document.getElementById('uiChatStatus');
+
+  let userMessages = [];
+  let assistantMessages = [];
+  let lastAssistantId = 0;
+  let unread = 0;
+  let lastThinking = false;
+
+  const THINKING_TIMEOUT_MS = 90000;
+
+  const setStatus = (text) => { status.textContent = text; };
+
+  function setUnread(n) {
+    unread = n;
+    fab.dataset.unread = n > 0 ? 'true' : 'false';
+    fab.setAttribute('aria-label', n > 0 ? `Open chat (${n} new)` : 'Open chat');
+  }
+
+  function nextId(list) {
+    return list.length ? Math.max(...list.map((m) => m.id)) + 1 : 1;
+  }
+
+  function isThinking() {
+    const lastUser = userMessages[userMessages.length - 1];
+    if (!lastUser) return false;
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    if (lastAssistant && lastAssistant.ts >= lastUser.ts) return false;
+    return Date.now() - lastUser.ts < THINKING_TIMEOUT_MS;
+  }
+
+  function render() {
+    const merged = [
+      ...userMessages.map((m) => ({ ...m, role: 'user' })),
+      ...assistantMessages.map((m) => ({ ...m, role: 'assistant' })),
+    ].sort((a, b) => a.ts - b.ts);
+    const thinking = isThinking();
+    lastThinking = thinking;
+
+    if (!merged.length && !thinking) {
+      log.innerHTML = '<div class="ui-chat-empty">No messages yet. Say hi 👋</div>';
+      return;
+    }
+    log.innerHTML = '';
+    for (const m of merged) {
+      const div = document.createElement('div');
+      div.className = 'ui-chat-msg';
+      div.dataset.role = m.role;
+      div.textContent = m.text;
+      log.appendChild(div);
+    }
+    if (thinking) {
+      const node = document.createElement('div');
+      node.className = 'ui-chat-thinking';
+      node.setAttribute('aria-live', 'polite');
+      node.innerHTML = '<span>Claude is thinking</span><span class="ui-chat-dots"><span></span><span></span><span></span></span>';
+      log.appendChild(node);
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function postUserMessages() {
+    setStatus('sending…');
+    try {
+      const r = await fetch('/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'chat-in.json', content: userMessages }),
+      });
+      setStatus(r.ok ? '' : 'send failed');
+    } catch {
+      setStatus('offline');
+    }
+  }
+
+  async function loadInitialUser() {
+    try {
+      const r = await fetch('/chat-in.json?t=' + Date.now());
+      if (!r.ok) return;
+      const arr = await r.json();
+      if (Array.isArray(arr)) {
+        userMessages = arr;
+        render();
+      }
+    } catch {}
+  }
+
+  async function pollAssistant() {
+    try {
+      const r = await fetch('/chat-out.json?t=' + Date.now());
+      if (!r.ok) return;
+      const arr = await r.json();
+      if (!Array.isArray(arr)) return;
+      const newIds = arr.filter((m) => m.id > lastAssistantId);
+      if (newIds.length) {
+        assistantMessages = arr;
+        lastAssistantId = Math.max(...arr.map((m) => m.id));
+        if (panel.dataset.open !== 'true') setUnread(unread + newIds.length);
+      }
+      if (newIds.length || isThinking() !== lastThinking) render();
+    } catch {}
+  }
+
+  fab.addEventListener('click', () => {
+    const open = panel.dataset.open === 'true';
+    panel.dataset.open = open ? 'false' : 'true';
+    if (!open) {
+      setUnread(0);
+      input.focus();
+      log.scrollTop = log.scrollHeight;
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    userMessages = [...userMessages, { id: nextId(userMessages), text, ts: Date.now() }];
+    input.value = '';
+    render();
+    await postUserMessages();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  loadInitialUser();
+  pollAssistant();
+  window.__uiChatPollInterval = setInterval(pollAssistant, 1500);
+})();
+</script>
