@@ -1,8 +1,8 @@
 ---
-name: iterate
-description: Iterate through a problem to relentlessly finding loose threads and tie off the loose ends
+
+## name: iterate  
+description: Iterate through a problem to relentlessly find loose threads and tie off the loose ends  
 user-invocable: true
----
 
 # Iterate
 
