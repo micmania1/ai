@@ -6,7 +6,7 @@ A personal collection of AI skills, agents, and tools for enhancing development 
 
 ## Skills
 
-### /iterate
+### `/iterate`
 
 What is does: `/iterate` attempts to thoroughly investigate and adress user queries without accepting only the first answer an agent can find. It does this be looping through many agents, adding to a collection of findings until agents can no longer find new information.
 
