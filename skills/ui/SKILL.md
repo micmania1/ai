@@ -5,7 +5,7 @@ description: >-
 user-invocable: true
 ---
 
-# UI — browser-side collaboration surface
+# UI — browser-side collaboration surface (Experimental)
 
 A side-channel for tasks that would otherwise look like "ok, next… ok, next…" in
 chat, *or* for chat itself when the user wants to see your replies in a browser
